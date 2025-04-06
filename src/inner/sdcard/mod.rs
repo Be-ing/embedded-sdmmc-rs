@@ -21,6 +21,9 @@ use crate::{debug, trace, warn};
 // Types and Implementations
 // ****************************************************************************
 
+/// The max number of bytes in a command response.
+const COMMAND_RESPONSE_BYTES: usize = 5;
+
 /// Driver for an SD Card on an SPI bus.
 ///
 /// Built from an [`SpiDevice`] implementation and a Chip Select pin.
@@ -498,16 +501,20 @@ where
     }
 
     /// Perform a command.
-    async fn card_command(&mut self, command: u8, arg: u32) -> Result<[u8; 5], Error> {
+    async fn card_command(
+        &mut self,
+        command: u8,
+        arg: u32,
+    ) -> Result<[u8; COMMAND_RESPONSE_BYTES], Error> {
         if command != CMD0 && command != CMD12 {
             self.wait_not_busy(Delay::new_command()).await?;
         }
 
-        // Write the command and read the response in a single SPI transfer.
         const COMMAND_BYTES: usize = 6;
+        // The maximum number of bytes before the card should start sending the response. Based on
+        // http://elm-chan.org/docs/mmc/mmc_e.html
         const MAX_WAIT_BYTES: usize = 8;
-        const RESPONSE_BYTES: usize = 5;
-        const TRANSFER_BYTES: usize = COMMAND_BYTES + MAX_WAIT_BYTES + RESPONSE_BYTES;
+        const TRANSFER_BYTES: usize = COMMAND_BYTES + MAX_WAIT_BYTES + COMMAND_RESPONSE_BYTES;
 
         let mut buf = [0xFF; TRANSFER_BYTES];
         buf[0] = 0x40 | command;
@@ -517,18 +524,23 @@ where
         buf[4] = arg as u8;
         buf[5] = crc7(&buf[0..5]);
 
+        // Write the command and read the response in a single SPI transfer. In the async case
+        // this allows performing the command without CPU attention and it removes the risk of
+        // timeouts on the SD card caused by scheduling delays between sending the command and
+        // reading the response.
         self.transfer_bytes(&mut buf).await?;
 
+        // Find the response in the buffer
         buf.iter()
             .skip(COMMAND_BYTES)
             .position(|&b| (b & 0x80) == ERROR_OK)
             .and_then(|pos| {
                 let start = pos + COMMAND_BYTES;
-                let end = start + RESPONSE_BYTES;
+                let end = start + COMMAND_RESPONSE_BYTES;
                 buf.get(start..end)
             })
             .and_then(|bytes| bytes.try_into().ok())
-            .ok_or(Error::TimeoutCommand(command))
+            .ok_or(Error::UnexpectedResponse(command))
     }
 
     /// Receive a byte from the SPI bus by clocking out an 0xFF byte.
@@ -624,6 +636,8 @@ pub enum Error {
     TimeoutWaitNotBusy,
     /// We didn't get a response when executing this command
     TimeoutCommand(u8),
+    /// We didn't get the expected response when executing this command
+    UnexpectedResponse(u8),
     /// We didn't get a response when executing this application-specific command
     TimeoutACommand(u8),
     /// We got a bad response from Command 58
