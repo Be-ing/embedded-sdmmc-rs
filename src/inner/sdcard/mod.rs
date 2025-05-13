@@ -5,10 +5,11 @@
 
 pub use crate::common::sdcard::proto;
 
-use super::super::{bisync, DelayNs, SpiDevice};
+use super::super::{bisync, DelayNs, SpiBus, SpiDevice};
 
 use super::blockdevice::{Block, BlockCount, BlockDevice, BlockIdx};
 use core::cell::RefCell;
+use embedded_hal::digital::OutputPin;
 use proto::*;
 
 // ****************************************************************************
@@ -23,6 +24,17 @@ use crate::{debug, trace, warn};
 
 /// The max number of bytes in a command response.
 const COMMAND_RESPONSE_BYTES: usize = 5;
+
+/// Power on
+#[bisync]
+pub async fn power_on<BUS, CS>(spi: &mut BUS, cs: &mut CS) -> Result<(), Error>
+where
+    BUS: SpiBus,
+    CS: OutputPin,
+{
+    cs.set_high().map_err(|_| Error::Transport)?;
+    spi.write(&[0xFF; 10]).await.map_err(|_| Error::Transport)
+}
 
 /// Driver for an SD Card on an SPI bus.
 ///

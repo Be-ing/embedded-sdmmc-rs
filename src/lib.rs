@@ -89,20 +89,22 @@ mod structure;
 mod common;
 
 /// Blocking implementation of this crate. Uses traits from embedded_hal & embedded_io crates.
+#[allow(clippy::duplicate_mod)]
 #[path = "."]
 pub mod blocking {
     use bisync::synchronous::*;
-    use embedded_hal::{delay::DelayNs, spi::SpiDevice};
+    use embedded_hal::{delay::DelayNs, spi::SpiBus, spi::SpiDevice};
     use embedded_io::{ErrorType, Read, Seek, SeekFrom, Write};
     mod inner;
     pub use inner::*;
 }
 
 /// Async implementation of this crate. Uses traits from embedded_hal_async & embedded_io_async crates.
+#[allow(clippy::duplicate_mod)]
 #[path = "."]
 pub mod asynchronous {
     use bisync::asynchronous::*;
-    use embedded_hal_async::{delay::DelayNs, spi::SpiDevice};
+    use embedded_hal_async::{delay::DelayNs, spi::SpiBus, spi::SpiDevice};
     use embedded_io_async::{ErrorType, Read, Seek, SeekFrom, Write};
     mod inner;
     pub use inner::*;

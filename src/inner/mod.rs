@@ -25,6 +25,9 @@ use super::{bisync, only_async, only_sync};
 pub use blockdevice::{Block, BlockCache, BlockCount, BlockDevice, BlockIdx};
 
 #[doc(inline)]
+pub use sdcard::power_on;
+
+#[doc(inline)]
 pub use fat::{FatVolume, VolumeName};
 
 #[doc(inline)]
