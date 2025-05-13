@@ -502,7 +502,7 @@ where
             Ok(())
         };
         let result = f.await;
-        let _ = self.read_byte();
+        let _ = self.read_byte().await;
         result
     }
 
