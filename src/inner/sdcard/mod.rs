@@ -528,7 +528,7 @@ where
         const MAX_WAIT_BYTES: usize = 8;
         const TRANSFER_BYTES: usize = COMMAND_BYTES + MAX_WAIT_BYTES + COMMAND_RESPONSE_BYTES;
 
-        let mut buf: [u8; 19] = [0xFF; TRANSFER_BYTES];
+        let mut buf = [0xFF; TRANSFER_BYTES];
         buf[0] = 0x40 | command;
         buf[1] = (arg >> 24) as u8;
         buf[2] = (arg >> 16) as u8;
