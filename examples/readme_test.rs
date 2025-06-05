@@ -7,7 +7,7 @@
 
 use core::cell::RefCell;
 
-use embedded_sdmmc::blocking::{Error, SdCardError, TimeSource, Timestamp};
+use embedded_sdmmc::blocking::{power_on, Error, SdCardError, TimeSource, Timestamp};
 
 pub struct DummyCsPin;
 
@@ -115,10 +115,15 @@ impl From<SdCardError> for MyError {
 
 fn main() -> Result<(), MyError> {
     // BEGIN Fake stuff that will be replaced with real peripherals
-    let spi_bus = RefCell::new(FakeSpiBus());
+    let mut spi_bus = RefCell::new(FakeSpiBus());
     let delay = FakeDelayer();
-    let sdmmc_spi = embedded_hal_bus::spi::RefCellDevice::new(&spi_bus, DummyCsPin, delay).unwrap();
     let time_source = FakeTimesource();
+    // END Fake stuff that will be replaced with real peripherals
+
+    power_on(spi_bus.get_mut(), &mut DummyCsPin)?;
+
+    // BEGIN Fake stuff that will be replaced with real peripherals
+    let sdmmc_spi = embedded_hal_bus::spi::RefCellDevice::new(&spi_bus, DummyCsPin, delay).unwrap();
     // END Fake stuff that will be replaced with real peripherals
 
     use embedded_sdmmc::blocking::{Mode, SdCard, VolumeIdx, VolumeManager};

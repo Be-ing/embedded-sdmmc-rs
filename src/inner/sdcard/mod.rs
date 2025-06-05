@@ -5,10 +5,11 @@
 
 pub use crate::common::sdcard::proto;
 
-use super::super::{bisync, DelayNs, SpiDevice};
+use super::super::{bisync, DelayNs, SpiBus, SpiDevice};
 
 use super::blockdevice::{Block, BlockCount, BlockDevice, BlockIdx};
 use core::cell::RefCell;
+use embedded_hal::digital::OutputPin;
 use proto::*;
 
 // ****************************************************************************
@@ -23,6 +24,17 @@ use crate::{debug, trace, warn};
 
 /// The max number of bytes in a command response.
 const COMMAND_RESPONSE_BYTES: usize = 5;
+
+/// Power on
+#[bisync]
+pub async fn power_on<BUS, CS>(spi: &mut BUS, cs: &mut CS) -> Result<(), Error>
+where
+    BUS: SpiBus,
+    CS: OutputPin,
+{
+    cs.set_high().map_err(|_| Error::Transport)?;
+    spi.write(&[0xFF; 10]).await.map_err(|_| Error::Transport)
+}
 
 /// Driver for an SD Card on an SPI bus.
 ///
@@ -490,7 +502,7 @@ where
             Ok(())
         };
         let result = f.await;
-        let _ = self.read_byte();
+        let _ = self.read_byte().await;
         result
     }
 
@@ -511,7 +523,7 @@ where
         }
 
         const COMMAND_BYTES: usize = 6;
-        // The maximum number of bytes before the card should start sending the response. Based on
+        // The number of bytes Ncr before the card should start sending the response is between 1 and 8. Based on
         // http://elm-chan.org/docs/mmc/mmc_e.html
         const MAX_WAIT_BYTES: usize = 8;
         const TRANSFER_BYTES: usize = COMMAND_BYTES + MAX_WAIT_BYTES + COMMAND_RESPONSE_BYTES;
@@ -528,10 +540,18 @@ where
         // this allows performing the command without CPU attention and it removes the risk of
         // timeouts on the SD card caused by scheduling delays between sending the command and
         // reading the response.
-        self.transfer_bytes(&mut buf).await?;
+        // CMD17 and CMD18 send the data block after the response. If the response is sent after
+        // less than MAX_WAIT_BYTES, the start block may be already in buf. Therefore, for CMD17 and CMD18,
+        // the response is only searched for in the 2 subsequent COMMAND_BYTES. If none is found,
+        // the system waits for an answer for additional MAX_WAIT_BYTES-2.
+        match command {
+            CMD17 | CMD18 => self.transfer_bytes(&mut buf[0..COMMAND_BYTES + 2]).await?,
+            _ => self.transfer_bytes(&mut buf).await?,
+        };
 
         // Find the response in the buffer
-        buf.iter()
+        let res = buf
+            .iter()
             .skip(COMMAND_BYTES)
             .position(|&b| (b & 0x80) == ERROR_OK)
             .and_then(|pos| {
@@ -539,8 +559,20 @@ where
                 let end = start + COMMAND_RESPONSE_BYTES;
                 buf.get(start..end)
             })
-            .and_then(|bytes| bytes.try_into().ok())
-            .ok_or(Error::UnexpectedResponse(command))
+            .and_then(|bytes| bytes.try_into().ok());
+        match (res, command) {
+            (Some(res), _) => Ok(res),
+            (None, CMD17 | CMD18) => {
+                for _retry in 0..8 - 2 {
+                    let ret = self.read_byte().await?;
+                    if ret & 0x80 == ERROR_OK {
+                        return Ok([ret, 0, 0, 0, 0]);
+                    }
+                }
+                Err(Error::UnexpectedResponse(command))
+            }
+            (None, _) => Err(Error::UnexpectedResponse(command)),
+        }
     }
 
     /// Receive a byte from the SPI bus by clocking out an 0xFF byte.

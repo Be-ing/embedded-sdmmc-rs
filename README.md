@@ -11,7 +11,9 @@ designed for readability and simplicity over performance.
 You will need something that implements the `BlockDevice` trait, which can read and write the 512-byte blocks (or sectors) from your card. If you were to implement this over USB Mass Storage, there's no reason this crate couldn't work with a USB Thumb Drive, but we only supply a `BlockDevice` suitable for reading SD and SDHC cards over SPI.
 
 ```rust
-use embedded_sdmmc::{SdCard, VolumeManager, Mode, VolumeIdx};
+use embedded_sdmmc::{SdCard, VolumeManager, Mode, VolumeIdx, power_on};
+// Send initilization sequence
+power_on(spi_bus, cs)?;
 // Build an SD Card interface out of an SPI device, a chip-select pin and the delay object
 let sdcard = SdCard::new(sdmmc_spi, delay);
 // Get the card size (this also triggers card initialisation because it's not been done yet)
